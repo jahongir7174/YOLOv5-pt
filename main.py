@@ -154,14 +154,14 @@ def train(params, args, device):
 
             save = {'model': copy.deepcopy(ema.ema).half()}
 
-            torch.save(save, 'weights/last.pt')
+            torch.save(save, 'weights/coco_last.pt')
             if best_fitness == current:
-                torch.save(save, 'weights/best.pt')
+                torch.save(save, 'weights/coco_best.pt')
             del save
 
     if args.local_rank == 0:
-        util.strip_optimizer('weights/last.pt')
-        util.strip_optimizer('weights/best.pt')
+        util.strip_optimizer('weights/coco_last.pt')
+        util.strip_optimizer('weights/coco_best.pt')
     if args.distributed:
         torch.distributed.destroy_process_group()
     torch.cuda.empty_cache()
