@@ -14,6 +14,12 @@ from utils import util
 from utils.dataset import input_fn
 
 
+def learning_rate(params, epochs):
+    def fn(x):
+        return ((1 - math.cos(x * math.pi / epochs)) / 2) * (params['lrf'] - 1) + 1
+    return fn
+
+
 def train(params, args, device):
     epochs = 300
     util.init_seeds()
@@ -43,7 +49,7 @@ def train(params, args, device):
     optimizer.add_param_group({'params': pg2})
     del pg0, pg1, pg2
 
-    lr = util.one_cycle(1, params['lrf'], epochs)
+    lr = learning_rate(params, epochs)
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr)
 
     # EMA
