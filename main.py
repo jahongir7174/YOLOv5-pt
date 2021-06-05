@@ -228,13 +228,13 @@ def test(model=None, args=None, params=None):
                 continue
 
             pred_n = pred.clone()
-            util.scale_coords(images[si].shape[1:], pred_n[:, :4], shapes[si][0], shapes[si][1])
+            util.scale_coordinates(images[si].shape[1:], pred_n[:, :4], shapes[si][0], shapes[si][1])
             correct = torch.zeros(pred.shape[0], n_iou, dtype=torch.bool, device=device)
             if nl:
                 detected = []
                 t_cls_tensor = labels[:, 0]
                 t_box = util.wh2xy(labels[:, 1:5]) * wh_wh
-                util.scale_coords(images[si].shape[1:], t_box, shapes[si][0], shapes[si][1])
+                util.scale_coordinates(images[si].shape[1:], t_box, shapes[si][0], shapes[si][1])
 
                 for cls in torch.unique(t_cls_tensor):
                     ti = (cls == t_cls_tensor).nonzero(as_tuple=False).view(-1)
