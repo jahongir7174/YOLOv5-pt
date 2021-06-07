@@ -171,16 +171,16 @@ class YOLO(torch.nn.Module):
         self.initialize_biases()
 
     def forward(self, x):
-        b4, b3, b2, b1, b0 = self.net(x)
+        b5, b4, b3, b2, b1 = self.net(x)
 
-        h10 = self.h10(b4)
-        h11 = self.h11(torch.cat([self.up(h10), b3], 1))
+        h10 = self.h10(b5)
+        h11 = self.h11(torch.cat([self.up(h10), b4], 1))
 
         h12 = self.h12(h11)
-        h13 = self.h13(torch.cat([self.up(h12), b2], 1))
+        h13 = self.h13(torch.cat([self.up(h12), b3], 1))
 
         h14 = self.h14(h13)
-        h15 = self.h15(torch.cat([self.up(h14), b1], 1))
+        h15 = self.h15(torch.cat([self.up(h14), b2], 1))
 
         h16 = self.h16(h15)
         h17 = self.h17(torch.cat([h16, h14], 1))
