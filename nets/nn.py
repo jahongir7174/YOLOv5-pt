@@ -114,30 +114,30 @@ class Head(torch.nn.Module):
 class DarkNet(torch.nn.Module):
     def __init__(self, filters, num_dep, gate):
         super().__init__()
-        b0 = [Conv(filters[0], filters[1], 3, 1)]
-        b1 = [Conv(filters[1], filters[2], 3, 2),
+        b1 = [Conv(filters[0], filters[1], 3, 1)]
+        b2 = [Conv(filters[1], filters[2], 3, 2),
               CSP(filters[2], filters[2], num_dep[0], gate[0])]
-        b2 = [Conv(filters[2], filters[3], 3, 2),
+        b3 = [Conv(filters[2], filters[3], 3, 2),
               CSP(filters[3], filters[3], num_dep[1], gate[0])]
-        b3 = [Conv(filters[3], filters[4], 3, 2),
+        b4 = [Conv(filters[3], filters[4], 3, 2),
               CSP(filters[4], filters[4], num_dep[1], gate[0])]
-        b4 = [Conv(filters[4], filters[5], 3, 2),
+        b5 = [Conv(filters[4], filters[5], 3, 2),
               SPP(filters[5], filters[5]),
               CSP(filters[5], filters[5], num_dep[0], gate[1])]
 
-        self.b0 = torch.nn.Sequential(*b0)
         self.b1 = torch.nn.Sequential(*b1)
         self.b2 = torch.nn.Sequential(*b2)
         self.b3 = torch.nn.Sequential(*b3)
         self.b4 = torch.nn.Sequential(*b4)
+        self.b5 = torch.nn.Sequential(*b5)
 
     def forward(self, x):
-        b0 = self.b0(torch.cat([x[..., ::2, ::2], x[..., 1::2, ::2], x[..., ::2, 1::2], x[..., 1::2, 1::2]], 1))
-        b1 = self.b1(b0)
+        b1 = self.b1(torch.cat([x[..., ::2, ::2], x[..., 1::2, ::2], x[..., ::2, 1::2], x[..., 1::2, 1::2]], 1))
         b2 = self.b2(b1)
         b3 = self.b3(b2)
         b4 = self.b4(b3)
-        return b4, b3, b2, b1, b0
+        b5 = self.b5(b4)
+        return b5, b4, b3, b2, b1
 
 
 class YOLO(torch.nn.Module):
