@@ -151,17 +151,17 @@ class YOLO(torch.nn.Module):
         self.net = DarkNet(filters, num_dep, [True, False])
 
         self.h10 = Conv(filters[5], filters[4], 3, 1)
-        self.h11 = CSP(filters[5], filters[4], num_dep[0], False)
+        self.h11 = CSP(2 * filters[4], filters[4], num_dep[0], False)
         self.h12 = Conv(filters[4], filters[3], 3, 1)
-        self.h13 = CSP(filters[4], filters[3], num_dep[0], False)
+        self.h13 = CSP(2 * filters[3], filters[3], num_dep[0], False)
         self.h14 = Conv(filters[3], filters[2], 3, 1)
-        self.h15 = CSP(filters[3], filters[2], num_dep[0], False)
+        self.h15 = CSP(2 * filters[2], filters[2], num_dep[0], False)
         self.h16 = Conv(filters[2], filters[2], 3, 2)
-        self.h17 = CSP(filters[3], filters[3], num_dep[0], False)
+        self.h17 = CSP(2 * filters[2], filters[3], num_dep[0], False)
         self.h18 = Conv(filters[3], filters[3], 3, 2)
-        self.h19 = CSP(filters[4], filters[4], num_dep[0], False)
+        self.h19 = CSP(2 * filters[3], filters[4], num_dep[0], False)
         self.h20 = Conv(filters[4], filters[4], 3, 2)
-        self.h21 = CSP(filters[5], filters[5], num_dep[0], False)
+        self.h21 = CSP(2 * filters[4], filters[5], num_dep[0], False)
 
         self.head = Head(num_class, anchor, (filters[2], filters[3], filters[4], filters[5]))
 
