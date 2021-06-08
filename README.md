@@ -9,17 +9,24 @@
 #### Dataset structure
     ├── Dataset folder 
         ├── images
-            ├── 1111.jpg
-            ├── 2222.jpg
+            ├── train2017
+                ├── 1111.jpg
+                ├── 2222.jpg
+            ├── val2017
+                ├── 1111.jpg
+                ├── 2222.jpg
         ├── labels
-            ├── 1111.txt
-            ├── 2222.txt
-        ├── train.txt
-        ├── test.txt
+            ├── train2017
+                ├── 1111.txt
+                ├── 2222.txt
+            ├── val2017
+                ├── 1111.txt
+                ├── 2222.txt
+        ├── train2017.txt
+        ├── test2017.txt
         
 #### Note
-* txt file should be in YOLO format
-* [this repo](https://github.com/jahongir7174/YOLO2VOC) can be used to VOC to YOLO format 
+* txt file should be in YOLO format, and it contains image paths with extension
 
 #### Reference
 * https://github.com/ultralytics/yolov5
