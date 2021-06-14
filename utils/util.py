@@ -36,6 +36,7 @@ def check_anchors(dataset, model, thr=4.0, img_size=640):
         return (best > 1. / thr).float().mean(), (x > 1. / thr).float().sum(1).mean()
 
     bpr, aat = metric(m.anchor_grid.clone().cpu().view(-1, 2))
+    print(f'anchors/target = {aat:.2f}, best possible recall (BPR) = {bpr:.4f}', end='')
     if bpr < 0.98:  # threshold to recompute
         print('\nAnalyzing anchors... ', end='')
         print('anchors/target = %.2f, Best Possible Recall (BPR) = %.4f' % (aat, bpr), end='')
