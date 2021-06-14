@@ -2,9 +2,9 @@ import math
 
 import torch
 
-anchor = [[10,  11, 24,  24,  27,  52],
-          [27,  20, 25,  45,  53,  41],
-          [45,  89, 97,  79,  79,  170],
+anchor = [[10, 11, 24, 24, 27, 52],
+          [27, 20, 25, 45, 53, 41],
+          [45, 89, 97, 79, 79, 170],
           [234, 99, 171, 195, 327, 272]]
 
 
@@ -26,6 +26,48 @@ class Conv(torch.nn.Module):
 
     def forward(self, x):
         return self.silu(self.norm(self.conv(x)))
+
+
+# class Residual(torch.nn.Module):
+#     def __init__(self, ch, add, scale=8):
+#         super().__init__()
+#         width = ch // 4
+#
+#         self.add = add
+#         self.nums = scale - 1
+#         conv2 = []
+#         for i in range(self.nums):
+#             conv2.append(torch.nn.Sequential(torch.nn.Conv2d(width, width, 3, 1, 1, bias=False),
+#                                              torch.nn.GroupNorm(20, width),
+#                                              torch.nn.SiLU(inplace=True)))
+#
+#         self.conv1 = Conv(ch, width * scale)
+#         self.conv2 = torch.nn.ModuleList(conv2)
+#         self.conv3 = torch.nn.Conv2d(width * scale, ch, 1, bias=False)
+#         self.norm3 = torch.nn.GroupNorm(40, ch)
+#
+#         self.silu = torch.nn.SiLU(inplace=True)
+#         self.scale = scale
+#         self.width = width
+#
+#     def forward(self, x):
+#         residual = x
+#
+#         out = self.conv1(x)
+#
+#         spx = torch.split(out, self.width, 1)
+#         sp = spx[0]
+#         out = sp
+#         for i in range(1, self.nums):
+#             sp = sp + spx[i]
+#             sp = self.conv2[i](sp)
+#             out = torch.cat((out, sp), 1)
+#         out = torch.cat((out, spx[self.nums]), 1)
+#         out = self.conv3(out)
+#         out = self.norm3(out)
+#         if self.add:
+#             out = out + residual
+#         return self.silu(out)
 
 
 class Residual(torch.nn.Module):
