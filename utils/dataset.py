@@ -75,14 +75,12 @@ class Dataset(data.Dataset):
 
         if self.augment:
             if not mosaic:
-                if random.random() < 0.5:
-                    image, labels = random_perspective(image, labels,
-                                                       degree_gain=params['degrees'],
-                                                       translate_gain=params['translate'],
-                                                       scale_gain=params['scale'],
-                                                       shear_gain=params['shear'],
-                                                       perspective_gain=params['perspective'])
-
+                image, labels = random_perspective(image, labels,
+                                                   degree_gain=params['degrees'],
+                                                   translate_gain=params['translate'],
+                                                   scale_gain=params['scale'],
+                                                   shear_gain=params['shear'],
+                                                   perspective_gain=params['perspective'])
             # Augment colorspace
             augment_hsv(image, h_gain=params['hsv_h'], s_gain=params['hsv_s'], v_gain=params['hsv_v'])
 
