@@ -17,6 +17,7 @@ from utils.dataset import input_fn
 def learning_rate(params, epochs):
     def fn(x):
         return ((1 - math.cos(x * math.pi / epochs)) / 2) * (params['lrf'] - 1) + 1
+
     return fn
 
 
@@ -58,10 +59,6 @@ def train(params, args, device):
     stride = max(int(model.head.stride.max()), 32)  # grid size (max stride)
     num_layers = model.head.num_layers
 
-    # DP mode
-    if not args.distributed and torch.cuda.device_count() > 1:
-        model = torch.nn.DataParallel(model)
-
     file_names = []
     with open(os.path.join('../Dataset/COCO/train2017.txt')) as f:
         for file_name in f.readlines():
@@ -73,7 +70,9 @@ def train(params, args, device):
     if args.local_rank == 0:
         util.check_anchors(dataset, model, params['anchor_t'], args.image_size)
         model.half().float()
-
+    # DP mode
+    if not args.distributed and torch.cuda.device_count() > 1:
+        model = torch.nn.DataParallel(model)
     # DDP mode
     if args.distributed:
         model = torch.nn.parallel.DistributedDataParallel(model,
@@ -275,7 +274,7 @@ def test(model=None, args=None, params=None):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--image-size', type=int, default=416)
-    parser.add_argument('--batch-size', type=int, default=34)
+    parser.add_argument('--batch-size', type=int, default=2)
     parser.add_argument('--multi-scale', action='store_true')
     parser.add_argument('--local_rank', type=int, default=0)
     args = parser.parse_args()
