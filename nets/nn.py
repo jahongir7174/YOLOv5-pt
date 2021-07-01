@@ -2,9 +2,9 @@ import math
 
 import torch
 
-anchor = [[10, 11, 24, 24, 27, 52],
-          [27, 20, 25, 45, 53, 41],
-          [45, 89, 97, 79, 79, 170],
+anchor = [[10,  11, 24,  24,  27,  52],
+          [27,  20, 25,  45,  53,  41],
+          [45,  89, 97,  79,  79,  170],
           [234, 99, 171, 195, 327, 272]]
 
 
@@ -26,48 +26,6 @@ class Conv(torch.nn.Module):
 
     def forward(self, x):
         return self.silu(self.norm(self.conv(x)))
-
-
-# class Residual(torch.nn.Module):
-#     def __init__(self, ch, add, scale=8):
-#         super().__init__()
-#         width = ch // 4
-#
-#         self.add = add
-#         self.nums = scale - 1
-#         conv2 = []
-#         for i in range(self.nums):
-#             conv2.append(torch.nn.Sequential(torch.nn.Conv2d(width, width, 3, 1, 1, bias=False),
-#                                              torch.nn.GroupNorm(20, width),
-#                                              torch.nn.SiLU(inplace=True)))
-#
-#         self.conv1 = Conv(ch, width * scale)
-#         self.conv2 = torch.nn.ModuleList(conv2)
-#         self.conv3 = torch.nn.Conv2d(width * scale, ch, 1, bias=False)
-#         self.norm3 = torch.nn.GroupNorm(40, ch)
-#
-#         self.silu = torch.nn.SiLU(inplace=True)
-#         self.scale = scale
-#         self.width = width
-#
-#     def forward(self, x):
-#         residual = x
-#
-#         out = self.conv1(x)
-#
-#         spx = torch.split(out, self.width, 1)
-#         sp = spx[0]
-#         out = sp
-#         for i in range(1, self.nums):
-#             sp = sp + spx[i]
-#             sp = self.conv2[i](sp)
-#             out = torch.cat((out, sp), 1)
-#         out = torch.cat((out, spx[self.nums]), 1)
-#         out = self.conv3(out)
-#         out = self.norm3(out)
-#         if self.add:
-#             out = out + residual
-#         return self.silu(out)
 
 
 class Residual(torch.nn.Module):
@@ -94,23 +52,13 @@ class CSP(torch.nn.Module):
 
 
 class SPP(torch.nn.Module):
-    def __init__(self, in_ch, out_ch, k=(5, 9, 13)):
-        super().__init__()
-        self.conv1 = Conv(in_ch, out_ch, 1, 1)
-        self.conv2 = Conv(in_ch, out_ch, 1, 1)
-        self.conv3 = Conv(out_ch, out_ch, 3, 1)
-        self.conv4 = Conv(out_ch, out_ch, 1, 1)
-        self.conv5 = Conv(4 * out_ch, out_ch, 1, 1)
-        self.conv6 = Conv(out_ch, out_ch, 3, 1)
-        self.conv7 = Conv(2 * out_ch, out_ch, 1, 1)
-        self.res_m = torch.nn.ModuleList([torch.nn.MaxPool2d(x, 1, x // 2) for x in k])
+    def __init__(self, ch):
+        super(SPP, self).__init__()
+        self.conv = Conv(4 * ch, ch)
+        self.res_m = torch.nn.ModuleList([torch.nn.MaxPool2d(x, 1, x // 2) for x in (5, 9, 13)])
 
     def forward(self, x):
-        x1 = x
-        y1 = self.conv1(x1)
-        x2 = self.conv4(self.conv3(self.conv2(x)))
-        y2 = self.conv6(self.conv5(torch.cat([x2] + [m(x2) for m in self.res_m], 1)))
-        return self.conv7(torch.cat((y1, y2), dim=1))
+        return self.conv(torch.cat([x] + [m(x) for m in self.res_m], 1))
 
 
 class Head(torch.nn.Module):
@@ -164,7 +112,7 @@ class DarkNet(torch.nn.Module):
         b4 = [Conv(filters[3], filters[4], 3, 2),
               CSP(filters[4], filters[4], num_dep[1], gate[0])]
         b5 = [Conv(filters[4], filters[5], 3, 2),
-              SPP(filters[5], filters[5]),
+              SPP(filters[5]),
               CSP(filters[5], filters[5], num_dep[0], gate[1])]
 
         self.b1 = torch.nn.Sequential(*b1)
