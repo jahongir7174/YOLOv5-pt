@@ -35,7 +35,7 @@ class Dataset(data.Dataset):
 
         cache = self.cache_labels(file_names)
 
-        labels, shapes = zip(*cache.values())
+        labels, shapes, self.segments = zip(*cache.values())
         self.labels = list(labels)
         self.shapes = numpy.array(shapes, dtype=numpy.float64)
         self.file_names = list(cache.keys())
@@ -49,7 +49,11 @@ class Dataset(data.Dataset):
         if mosaic:
             shapes = None
             image, labels = self.load_mosaic(index)
-
+            img = image.copy()
+            for label in labels:
+                _, x_min, y_min, x_max, y_max = list(map(int, label))
+                cv2.rectangle(img, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
+            cv2.imwrite(f'../results/{os.path.basename(self.file_names[index])}', img)
             if random.random() < params['mixup']:
                 img2, labels2 = self.load_mosaic(random.randint(0, len(self.file_names) - 1))
                 ratio = numpy.random.beta(8.0, 8.0)
@@ -114,10 +118,15 @@ class Dataset(data.Dataset):
                 shape = Image.open(file_name).size
                 assert (shape[0] > 9) & (shape[1] > 9), 'image size <10 pixels'
                 with open(file_name.replace('images', 'labels').replace('jpg', 'txt'), 'r') as f:
-                    y = numpy.array([x.split() for x in f.read().splitlines()], dtype=numpy.float32)
+                    label = [x.split() for x in f.read().strip().splitlines() if len(x)]
+                    if any([len(x) > 8 for x in label]):  # is segment
+                        classes = numpy.array([x[0] for x in label], dtype=numpy.float32)
+                        segments = [numpy.array(x[1:], dtype=numpy.float32).reshape(-1, 2) for x in label]
+                        y = numpy.concatenate((classes.reshape(-1, 1), util.segments2boxes(segments)), 1)
+                    y = numpy.array(y, dtype=numpy.float32)
                 if len(y) == 0:
                     y = numpy.zeros((0, 5), dtype=numpy.float32)
-                x[file_name] = [y, shape]
+                x[file_name] = [y, shape, segments]
             except FileNotFoundError:
                 pass
         return x
@@ -141,57 +150,79 @@ class Dataset(data.Dataset):
         return img, (h0, w0), img.shape[:2]  # img, hw_original, hw_resized
 
     def load_mosaic(self, index):
-        img4 = None
-        labels4 = []
+        # loads images in a 9-mosaic
+
+        labels9, segments9 = [], []
         s = self.image_size
-        yc, xc = [int(random.uniform(-x, 2 * s + x)) for x in self.mosaic_border]
-        indices = [index] + [random.randint(0, len(self.labels) - 1) for _ in range(3)]
-        y1a, y2a, x1a, x2a, y1b, y2b, x1b, x2b = None, None, None, None, None, None, None, None,
+        img9, wp, w0, hp, h0, c = None, None, None, None, None, None
+        indices = [index] + [random.randint(0, len(self.labels) - 1) for _ in range(8)]  # 8 additional image indices
         for i, index in enumerate(indices):
+            # Load image
             img, _, (h, w) = self.load_image(index)
 
-            if i == 0:
-                img4 = numpy.full((s * 2, s * 2, img.shape[2]), 114, dtype=numpy.uint8)
-                x1a, y1a, x2a, y2a = max(xc - w, 0), max(yc - h, 0), xc, yc
-                x1b, y1b, x2b, y2b = w - (x2a - x1a), h - (y2a - y1a), w, h
-            elif i == 1:  # top right
-                x1a, y1a, x2a, y2a = xc, max(yc - h, 0), min(xc + w, s * 2), yc
-                x1b, y1b, x2b, y2b = 0, h - (y2a - y1a), min(w, x2a - x1a), h
-            elif i == 2:  # bottom left
-                x1a, y1a, x2a, y2a = max(xc - w, 0), yc, xc, min(s * 2, yc + h)
-                x1b, y1b, x2b, y2b = w - (x2a - x1a), 0, w, min(y2a - y1a, h)
-            elif i == 3:  # bottom right
-                x1a, y1a, x2a, y2a = xc, yc, min(xc + w, s * 2), min(s * 2, yc + h)
-                x1b, y1b, x2b, y2b = 0, 0, min(w, x2a - x1a), min(y2a - y1a, h)
+            # place img in img9
+            if i == 0:  # center
+                img9 = numpy.full((s * 3, s * 3, img.shape[2]), 114, dtype=numpy.uint8)  # base image with 4 tiles
+                h0, w0 = h, w
+                c = s, s, s + w, s + h  # x_min, y_min, x_max, y_max (base) coordinates
+            elif i == 1:  # top
+                c = s, s - h, s + w, s
+            elif i == 2:  # top right
+                c = s + wp, s - h, s + wp + w, s
+            elif i == 3:  # right
+                c = s + w0, s, s + w0 + w, s + h
+            elif i == 4:  # bottom right
+                c = s + w0, s + hp, s + w0 + w, s + hp + h
+            elif i == 5:  # bottom
+                c = s + w0 - w, s + h0, s + w0, s + h0 + h
+            elif i == 6:  # bottom left
+                c = s + w0 - wp - w, s + h0, s + w0 - wp, s + h0 + h
+            elif i == 7:  # left
+                c = s - w, s + h0 - h, s, s + h0
+            elif i == 8:  # top left
+                c = s - w, s + h0 - hp - h, s, s + h0 - hp
 
-            img4[y1a:y2a, x1a:x2a] = img[y1b:y2b, x1b:x2b]
-            pad_w = x1a - x1b
-            pad_h = y1a - y1b
+            padx, pady = c[:2]
+            x1, y1, x2, y2 = [max(x, 0) for x in c]  # allocate coords
 
             # Labels
-            x = self.labels[index]
-            labels = x.copy()
-            if x.size > 0:
-                labels[:, 1] = w * (x[:, 1] - x[:, 3] / 2) + pad_w
-                labels[:, 2] = h * (x[:, 2] - x[:, 4] / 2) + pad_h
-                labels[:, 3] = w * (x[:, 1] + x[:, 3] / 2) + pad_w
-                labels[:, 4] = h * (x[:, 2] + x[:, 4] / 2) + pad_h
-            labels4.append(labels)
+            labels, segments = self.labels[index].copy(), self.segments[index].copy()
+            if labels.size:
+                labels[:, 1:] = util.xywhn2xyxy(labels[:, 1:], w, h, padx, pady)
+                segments = [util.xyn2xy(x, w, h, padx, pady) for x in segments]
+            labels9.append(labels)
+            segments9.extend(segments)
 
-        if len(labels4):
-            labels4 = numpy.concatenate(labels4, 0)
-            numpy.clip(labels4[:, 1:], 0, 2 * s, out=labels4[:, 1:])
+            # Image
+            img9[y1:y2, x1:x2] = img[y1 - pady:, x1 - padx:]
+            hp, wp = h, w  # height, width previous
+
+        # Offset
+        yc, xc = [int(random.uniform(0, s)) for _ in self.mosaic_border]  # mosaic center x, y
+        img9 = img9[yc:yc + 2 * s, xc:xc + 2 * s]
+
+        # Concat/clip labels
+        labels9 = numpy.concatenate(labels9, 0)
+        labels9[:, [1, 3]] -= xc
+        labels9[:, [2, 4]] -= yc
+        c = numpy.array([xc, yc])  # centers
+        segments9 = [x - c for x in segments9]
+
+        for x in (labels9[:, 1:], *segments9):
+            numpy.clip(x, 0, 2 * s, out=x)  # clip when using random_perspective()
+        # img9, labels9 = replicate(img9, labels9)  # replicate
 
         # Augment
-        img4, labels4 = random_perspective(img4, labels4,
+        img9, labels9, segments9 = copy_paste(img9, labels9, segments9)
+        img9, labels9 = random_perspective(img9, labels9, segments9,
                                            degree_gain=self.params['degrees'],
                                            translate_gain=self.params['translate'],
                                            scale_gain=self.params['scale'],
                                            shear_gain=self.params['shear'],
                                            perspective_gain=self.params['perspective'],
-                                           border=self.mosaic_border)
+                                           border=self.mosaic_border)  # border to remove
 
-        return img4, labels4
+        return img9, labels9
 
 
 def augment_hsv(image, h_gain=0.5, s_gain=0.5, v_gain=0.5):
@@ -234,15 +265,18 @@ def resize(image, new_shape=(640, 640), color=(114, 114, 114), scale_up=True):
     return image, ratio, (dw, dh)
 
 
-def random_perspective(image, targets=(), degree_gain=10, translate_gain=.1,
+def random_perspective(img, targets=(), segments=(), degree_gain=10, translate_gain=.1,
                        scale_gain=.1, shear_gain=10, perspective_gain=0.0, border=(0, 0)):
-    h = image.shape[0] + border[0] * 2
-    w = image.shape[1] + border[1] * 2
+    # torchvision.transforms.RandomAffine(degrees=(-10, 10), translate=(.1, .1), scale=(.9, 1.1), shear=(-10, 10))
+    # targets = [cls, xy_xy]
+
+    height = img.shape[0] + border[0] * 2  # shape(h,w,c)
+    width = img.shape[1] + border[1] * 2
 
     # Center
     center = numpy.eye(3)
-    center[0, 2] = -image.shape[1] / 2  # x translation (pixels)
-    center[1, 2] = -image.shape[0] / 2  # y translation (pixels)
+    center[0, 2] = -img.shape[1] / 2  # x translation (pixels)
+    center[1, 2] = -img.shape[0] / 2  # y translation (pixels)
 
     # Perspective
     perspective = numpy.eye(3)
@@ -252,7 +286,9 @@ def random_perspective(image, targets=(), degree_gain=10, translate_gain=.1,
     # Rotation and Scale
     rotation = numpy.eye(3)
     a = random.uniform(-degree_gain, degree_gain)
+    # a += random.choice([-180, -90, 0, 90])  # add 90deg rotations to small rotations
     s = random.uniform(1 - scale_gain, 1 + scale_gain)
+    # s = 2 ** random.uniform(-scale, scale)
     rotation[:2] = cv2.getRotationMatrix2D(angle=a, center=(0, 0), scale=s)
 
     # Shear
@@ -262,43 +298,85 @@ def random_perspective(image, targets=(), degree_gain=10, translate_gain=.1,
 
     # Translation
     translation = numpy.eye(3)
-    translation[0, 2] = random.uniform(0.5 - translate_gain, 0.5 + translate_gain) * w  # x translation (pixels)
-    translation[1, 2] = random.uniform(0.5 - translate_gain, 0.5 + translate_gain) * h  # y translation (pixels)
+    translation[0, 2] = random.uniform(0.5 - translate_gain, 0.5 + translate_gain) * width  # x translation (pixels)
+    translation[1, 2] = random.uniform(0.5 - translate_gain, 0.5 + translate_gain) * height  # y translation (pixels)
 
     # Combined rotation matrix
     matrix = translation @ shear @ rotation @ perspective @ center  # order of operations (right to left) is IMPORTANT
     if (border[0] != 0) or (border[1] != 0) or (matrix != numpy.eye(3)).any():  # image changed
         if perspective_gain:
-            image = cv2.warpPerspective(image, matrix, dsize=(w, h), borderValue=(114, 114, 114))
+            img = cv2.warpPerspective(img, matrix, dsize=(width, height), borderValue=(114, 114, 114))
         else:  # affine
-            image = cv2.warpAffine(image, matrix[:2], dsize=(w, h), borderValue=(114, 114, 114))
+            img = cv2.warpAffine(img, matrix[:2], dsize=(width, height), borderValue=(114, 114, 114))
+
+    # Visualize
+    # import matplotlib.pyplot as plt
+    # ax = plt.subplots(1, 2, figsize=(12, 6))[1].ravel()
+    # ax[0].imshow(img[:, :, ::-1])  # base
+    # ax[1].imshow(img2[:, :, ::-1])  # warped
 
     # Transform label coordinates
     n = len(targets)
     if n:
-        # warp points
-        xy = numpy.ones((n * 4, 3))
-        xy[:, :2] = targets[:, [1, 2, 3, 4, 1, 4, 3, 2]].reshape(n * 4, 2)  # x1y1, x2y2, x1y2, x2y1
-        xy = xy @ matrix.T  # transform
-        if perspective_gain:
-            xy = (xy[:, :2] / xy[:, 2:3]).reshape(n, 8)  # rescale
-        else:  # affine
-            xy = xy[:, :2].reshape(n, 8)
+        use_segments = any(x.any() for x in segments)
+        new = numpy.zeros((n, 4))
+        if use_segments:  # warp segments
+            segments = util.resample_segments(segments)  # up-sample
+            for i, segment in enumerate(segments):
+                xy = numpy.ones((len(segment), 3))
+                xy[:, :2] = segment
+                xy = xy @ matrix.T  # transform
+                xy = xy[:, :2] / xy[:, 2:3] if perspective_gain else xy[:, :2]  # perspective rescale or affine
 
-        # create new boxes
-        x = xy[:, [0, 2, 4, 6]]
-        y = xy[:, [1, 3, 5, 7]]
-        xy = numpy.concatenate((x.min(1), y.min(1), x.max(1), y.max(1))).reshape(4, n).T
+                # clip
+                new[i] = util.segment2box(xy, width, height)
 
-        xy[:, [0, 2]] = xy[:, [0, 2]].clip(0, w)
-        xy[:, [1, 3]] = xy[:, [1, 3]].clip(0, h)
+        else:  # warp boxes
+            xy = numpy.ones((n * 4, 3))
+            xy[:, :2] = targets[:, [1, 2, 3, 4, 1, 4, 3, 2]].reshape(n * 4, 2)  # x1y1, x2y2, x1y2, x2y1
+            xy = xy @ matrix.T  # transform
+            xy = (xy[:, :2] / xy[:, 2:3] if perspective_gain else xy[:, :2]).reshape(n,
+                                                                                     8)  # perspective rescale or affine
+
+            # create new boxes
+            x = xy[:, [0, 2, 4, 6]]
+            y = xy[:, [1, 3, 5, 7]]
+            new = numpy.concatenate((x.min(1), y.min(1), x.max(1), y.max(1))).reshape(4, n).T
+
+            # clip
+            new[:, [0, 2]] = new[:, [0, 2]].clip(0, width)
+            new[:, [1, 3]] = new[:, [1, 3]].clip(0, height)
 
         # filter candidates
-        i = box_candidates(box1=targets[:, 1:5].T * s, box2=xy.T)
+        i = box_candidates(box1=targets[:, 1:5].T * s, box2=new.T, area_thr=0.01 if use_segments else 0.10)
         targets = targets[i]
-        targets[:, 1:5] = xy[i]
+        targets[:, 1:5] = new[i]
 
-    return image, targets
+    return img, targets
+
+
+def copy_paste(img, labels, segments, probability=0.5):
+    # Implement Copy-Paste augmentation https://arxiv.org/abs/2012.07177, labels as nx5 np.array(cls, xyxy)
+    n = len(segments)
+    if probability and n:
+        h, w, c = img.shape  # height, width, channels
+        im_new = numpy.zeros(img.shape, numpy.uint8)
+        for j in random.sample(range(n), k=round(probability * n)):
+            l, s = labels[j], segments[j]
+            box = w - l[3], l[2], w - l[1], l[4]
+            ioa = util.bbox_ioa(box, labels[:, 1:5])  # intersection over area
+            if (ioa < 0.30).all():  # allow 30% obscuration of existing labels
+                labels = numpy.concatenate((labels, [[l[0], *box]]), 0)
+                segments.append(numpy.concatenate((w - s[:, 0:1], s[:, 1:2]), 1))
+                cv2.drawContours(im_new, [segments[j].astype(numpy.int32)], -1, (255, 255, 255), cv2.FILLED)
+
+        result = cv2.bitwise_and(src1=img, src2=im_new)
+        result = cv2.flip(result, 1)  # augment segments (flip left-right)
+        i = result > 0  # pixels to replace
+        # i[:, :] = result.max(2).reshape(h, w, 1)  # act over ch
+        img[i] = result[i]  # cv2.imwrite('debug.jpg', img)  # debug
+
+    return img, labels, segments
 
 
 def box_candidates(box1, box2, wh_thr=2, ar_thr=20, area_thr=0.1):  # box1(4,n), box2(4,n)
