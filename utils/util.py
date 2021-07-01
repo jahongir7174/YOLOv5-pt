@@ -294,6 +294,85 @@ def box_iou(box1, box2):
     return inter / (area1[:, None] + area2 - inter)  # iou = inter / (area1 + area2 - inter)
 
 
+def bbox_ioa(box1, box2, eps=1E-7):
+    """ Returns the intersection over box2 area given box1, box2. Boxes are x1y1x2y2
+    box1:       np.array of shape(4)
+    box2:       np.array of shape(nx4)
+    returns:    np.array of shape(n)
+    """
+
+    box2 = box2.transpose()
+
+    # Get the coordinates of bounding boxes
+    b1_x1, b1_y1, b1_x2, b1_y2 = box1[0], box1[1], box1[2], box1[3]
+    b2_x1, b2_y1, b2_x2, b2_y2 = box2[0], box2[1], box2[2], box2[3]
+
+    # Intersection area
+    inter_area = (numpy.minimum(b1_x2, b2_x2) - numpy.maximum(b1_x1, b2_x1)).clip(0) * \
+                 (numpy.minimum(b1_y2, b2_y2) - numpy.maximum(b1_y1, b2_y1)).clip(0)
+
+    # box2 area
+    box2_area = (b2_x2 - b2_x1) * (b2_y2 - b2_y1) + eps
+
+    # Intersection over box2 area
+    return inter_area / box2_area
+
+
+def segment2box(segment, width=640, height=640):
+    # Convert 1 segment label to 1 box label, applying inside-image constraint, i.e. (xy1, xy2, ...) to (xyxy)
+    x, y = segment.T  # segment xy
+    inside = (x >= 0) & (y >= 0) & (x <= width) & (y <= height)
+    x, y, = x[inside], y[inside]
+    return numpy.array([x.min(), y.min(), x.max(), y.max()]) if any(x) else numpy.zeros((1, 4))  # xyxy
+
+
+def resample_segments(segments, n=1000):
+    # Up-sample an (n,2) segment
+    for i, s in enumerate(segments):
+        x = numpy.linspace(0, len(s) - 1, n)
+        xp = numpy.arange(len(s))
+        # segment xy
+        segments[i] = numpy.concatenate([numpy.interp(x, xp, s[:, i]) for i in range(2)]).reshape(2, -1).T
+    return segments
+
+
+def xywhn2xyxy(x, w=640, h=640, padw=0, padh=0):
+    # Convert nx4 boxes from [x, y, w, h] normalized to [x1, y1, x2, y2] where xy1=top-left, xy2=bottom-right
+    y = x.clone() if isinstance(x, torch.Tensor) else numpy.copy(x)
+    y[:, 0] = w * (x[:, 0] - x[:, 2] / 2) + padw  # top left x
+    y[:, 1] = h * (x[:, 1] - x[:, 3] / 2) + padh  # top left y
+    y[:, 2] = w * (x[:, 0] + x[:, 2] / 2) + padw  # bottom right x
+    y[:, 3] = h * (x[:, 1] + x[:, 3] / 2) + padh  # bottom right y
+    return y
+
+
+def xyn2xy(x, w=640, h=640, padw=0, padh=0):
+    # Convert normalized segments into pixel segments, shape (n,2)
+    y = x.clone() if isinstance(x, torch.Tensor) else numpy.copy(x)
+    y[:, 0] = w * x[:, 0] + padw  # top left x
+    y[:, 1] = h * x[:, 1] + padh  # top left y
+    return y
+
+
+def xyxy2xywh(x):
+    # Convert nx4 boxes from [x1, y1, x2, y2] to [x, y, w, h] where xy1=top-left, xy2=bottom-right
+    y = numpy.copy(x)
+    y[:, 0] = (x[:, 0] + x[:, 2]) / 2  # x center
+    y[:, 1] = (x[:, 1] + x[:, 3]) / 2  # y center
+    y[:, 2] = x[:, 2] - x[:, 0]  # width
+    y[:, 3] = x[:, 3] - x[:, 1]  # height
+    return y
+
+
+def segments2boxes(segments):
+    # Convert segment labels to box labels, i.e. (cls, xy1, xy2, ...) to (cls, xywh)
+    boxes = []
+    for s in segments:
+        x, y = s.T  # segment xy
+        boxes.append([x.min(), y.min(), x.max(), y.max()])  # cls, xyxy
+    return xyxy2xywh(numpy.array(boxes))  # cls, xywh
+
+
 def non_max_suppression(prediction, conf_threshold=0.1, iou_threshold=0.6, merge=False, classes=None, agnostic=False):
     nc = prediction[0].shape[1] - 5  # number of classes
     xc = prediction[..., 4] > conf_threshold  # candidates
