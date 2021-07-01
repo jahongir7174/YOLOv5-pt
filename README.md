@@ -26,7 +26,7 @@
         ├── test2017.txt
         
 #### Note
-* txt file should be in YOLO format, and it contains image paths with extension
+* labels/*.txt files should be `cls, x1y1, x2y2, ... xnyn` normalized polygon format
 
 #### Reference
 * https://github.com/ultralytics/yolov5
