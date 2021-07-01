@@ -22,8 +22,8 @@
             ├── val2017
                 ├── 1111.txt
                 ├── 2222.txt
-        ├── train2017.txt
-        ├── test2017.txt
+        ├── train.txt
+        ├── test.txt
         
 #### Note
 * labels/*.txt files should be `cls, x1y1, x2y2, ... xnyn` normalized polygon format
