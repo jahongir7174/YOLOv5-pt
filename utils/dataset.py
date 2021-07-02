@@ -68,11 +68,13 @@ class Dataset(data.Dataset):
         if mosaic:
             shapes = None
             image, labels = self.load_mosaic(index)
-            img = image.copy()
-            for label in labels:
-                _, x_min, y_min, x_max, y_max = list(map(int, label))
-                cv2.rectangle(img, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
-            cv2.imwrite(f'../results/{os.path.basename(self.file_names[index])}', img)
+
+            # img = image.copy()
+            # for label in labels:
+            #     _, x_min, y_min, x_max, y_max = list(map(int, label))
+            #     cv2.rectangle(img, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
+            # cv2.imwrite(f'../results/{os.path.basename(self.file_names[index])}', img)  # debug augmentation
+
             if random.random() < params['mixup']:
                 img2, labels2 = self.load_mosaic(random.randint(0, len(self.file_names) - 1))
                 ratio = numpy.random.beta(8.0, 8.0)
