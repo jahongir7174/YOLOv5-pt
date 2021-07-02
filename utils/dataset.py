@@ -1,3 +1,4 @@
+import collections
 import math
 import os
 import random
@@ -39,6 +40,24 @@ class Dataset(data.Dataset):
         self.labels = list(labels)
         self.shapes = numpy.array(shapes, dtype=numpy.float64)
         self.file_names = list(cache.keys())
+
+        # balanced mosaic
+        self.file2category = collections.defaultdict(list)
+        self.category2file = collections.defaultdict(list)
+        for boxes, file_name in zip(labels, list(cache.keys())):
+            for box in boxes:
+                label, _, _, _, _ = box
+                self.file2category[file_name].append(label)
+                self.category2file[label].append(file_name)
+        a = []
+        p = []
+        for k, v in self.category2file.items():
+            a.append(k)
+            p.append(len(v))
+        p = 1 / numpy.array(p, numpy.int)
+        p /= p.sum()
+        self.a = a
+        self.p = p
 
     def __len__(self):
         return len(self.file_names)
@@ -152,17 +171,20 @@ class Dataset(data.Dataset):
     def load_mosaic(self, index):
         # loads images in a 9-mosaic
 
-        labels9, segments9 = [], []
         s = self.image_size
+        indices = [index]
+        labels9, segments9 = [], []
         img9, wp, w0, hp, h0, c = None, None, None, None, None, None
-        indices = [index] + [random.randint(0, len(self.labels) - 1) for _ in range(8)]  # 8 additional image indices
+        for category in numpy.random.choice(self.a, 8, False, self.p):
+            file_name = numpy.random.choice(self.category2file[category], 1)
+            index = self.file_names.index(file_name)
+            indices.append(index)  # 8 additional image indices
         for i, index in enumerate(indices):
-            # Load image
-            img, _, (h, w) = self.load_image(index)
+            image, _, (h, w) = self.load_image(index)
 
             # place img in img9
             if i == 0:  # center
-                img9 = numpy.full((s * 3, s * 3, img.shape[2]), 114, dtype=numpy.uint8)  # base image with 4 tiles
+                img9 = numpy.full((s * 3, s * 3, image.shape[2]), 114, dtype=numpy.uint8)  # base image with 4 tiles
                 h0, w0 = h, w
                 c = s, s, s + w, s + h  # x_min, y_min, x_max, y_max (base) coordinates
             elif i == 1:  # top
@@ -182,19 +204,19 @@ class Dataset(data.Dataset):
             elif i == 8:  # top left
                 c = s - w, s + h0 - hp - h, s, s + h0 - hp
 
-            padx, pady = c[:2]
+            pad_x, pad_y = c[:2]
             x1, y1, x2, y2 = [max(x, 0) for x in c]  # allocate coords
 
             # Labels
             labels, segments = self.labels[index].copy(), self.segments[index].copy()
             if labels.size:
-                labels[:, 1:] = util.xywhn2xyxy(labels[:, 1:], w, h, padx, pady)
-                segments = [util.xyn2xy(x, w, h, padx, pady) for x in segments]
+                labels[:, 1:] = util.xywhn2xyxy(labels[:, 1:], w, h, pad_x, pad_y)
+                segments = [util.xyn2xy(x, w, h, pad_x, pad_y) for x in segments]
             labels9.append(labels)
             segments9.extend(segments)
 
             # Image
-            img9[y1:y2, x1:x2] = img[y1 - pady:, x1 - padx:]
+            img9[y1:y2, x1:x2] = image[y1 - pad_y:, x1 - pad_x:]
             hp, wp = h, w  # height, width previous
 
         # Offset
@@ -210,7 +232,6 @@ class Dataset(data.Dataset):
 
         for x in (labels9[:, 1:], *segments9):
             numpy.clip(x, 0, 2 * s, out=x)  # clip when using random_perspective()
-        # img9, labels9 = replicate(img9, labels9)  # replicate
 
         # Augment
         img9, labels9, segments9 = copy_paste(img9, labels9, segments9)
@@ -309,12 +330,6 @@ def random_perspective(img, targets=(), segments=(), degree_gain=10, translate_g
         else:  # affine
             img = cv2.warpAffine(img, matrix[:2], dsize=(width, height), borderValue=(114, 114, 114))
 
-    # Visualize
-    # import matplotlib.pyplot as plt
-    # ax = plt.subplots(1, 2, figsize=(12, 6))[1].ravel()
-    # ax[0].imshow(img[:, :, ::-1])  # base
-    # ax[1].imshow(img2[:, :, ::-1])  # warped
-
     # Transform label coordinates
     n = len(targets)
     if n:
@@ -356,7 +371,7 @@ def random_perspective(img, targets=(), segments=(), degree_gain=10, translate_g
 
 
 def copy_paste(img, labels, segments, probability=0.5):
-    # Implement Copy-Paste augmentation https://arxiv.org/abs/2012.07177, labels as nx5 np.array(cls, xyxy)
+    # Implement Copy-Paste augmentation https://arxiv.org/abs/2012.07177, labels as nx5 np.array(cls, xy_xy)
     n = len(segments)
     if probability and n:
         h, w, c = img.shape  # height, width, channels
