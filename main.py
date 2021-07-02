@@ -272,6 +272,7 @@ def test(model=None, args=None, params=None):
 
 
 def main():
+    # python -m torch.distributed.launch --nproc_per_node 3 main.py
     parser = argparse.ArgumentParser()
     parser.add_argument('--image-size', type=int, default=416)
     parser.add_argument('--batch-size', type=int, default=2)
