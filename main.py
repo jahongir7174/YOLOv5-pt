@@ -317,9 +317,6 @@ def main():
     if args.test:
         test(args, params)
 
-    model = torch.load('./weights/v5_x.pt', map_location='cuda')['model'].float()
-    torch.save({'state_dict': model.state_dict()}, './weights/v5_x.pth')
-
 
 if __name__ == "__main__":
     main()
